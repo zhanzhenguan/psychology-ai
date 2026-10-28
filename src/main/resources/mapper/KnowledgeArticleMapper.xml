@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zzg.psychologyai.infrastructure.persistence.mapper.KnowledgeArticleMapper">
+
+    <!--
+        知识库文章表（docs/ai-agent.sql 的 knowledge_article 表，主键为 UUID 字符串）基础映射。
+        namespace 必须与 KnowledgeArticleMapper 接口全限定名一致。
+    -->
+    <resultMap id="BaseResultMap" type="com.zzg.psychologyai.infrastructure.persistence.po.KnowledgeArticlePO">
+        <id column="id" property="id"/>
+        <result column="category_id" property="categoryId"/>
+        <result column="title" property="title"/>
+        <result column="summary" property="summary"/>
+        <result column="content" property="content"/>
+        <result column="cover_image" property="coverImage"/>
+        <result column="tags" property="tags"/>
+        <result column="status" property="status"/>
+        <result column="read_count" property="readCount"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_flag" property="deletedFlag"/>
+    </resultMap>
+
+    <!-- 基础列清单，供自定义 SQL 复用 -->
+    <sql id="Base_Column_List">
+        id, category_id, title, summary, content, cover_image, tags, status, read_count,
+        create_time, update_time, created_by, updated_by, deleted_flag
+    </sql>
+
+
+    <select id="page" resultType="com.zzg.psychologyai.infrastructure.persistence.read.KnowledgeArticleDO">
+        select
+            a.*,
+            b.category_name,
+            c.username as author_name
+        from knowledge_article a
+         left JOIN knowledge_category b on b.id = a.category_id
+         left JOIN user c on  c.id = a.created_by
+        ${ew.customSqlSegment}
+
+    </select>
+
+
+    <select id="getById" resultType="com.zzg.psychologyai.infrastructure.persistence.read.KnowledgeArticleDO">
+        select
+            a.*,
+            b.category_name,
+            c.id as author_id,
+            c.username as author_name
+        from knowledge_article a
+         left JOIN knowledge_category b on b.id = a.category_id
+         left JOIN user c on  c.id = a.created_by
+        where a.deleted_flag = '0' and a.id = #{id}
+
+    </select>
+
+
+</mapper>

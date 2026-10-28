@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.zzg</groupId>
+    <artifactId>psychology-ai</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>psychology-ai</name>
+    <description>psychology-ai</description>
+
+    <properties>
+        <java.version>17</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <spring-boot.version>3.5.13</spring-boot.version>
+        <!-- MyBatis-Plus 3.5.17：3.5.x 稳定线最新版，通过 mybatis-plus-spring-boot3-starter 适配 Spring Boot 3.x -->
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <!-- Spring AI 1.1.8：1.x 最新 GA，支持 Spring Boot 3.5.x；2.0.x 起要求 Spring Boot 4.0，故锁定 1.1.x -->
+        <spring-ai.version>1.1.8</spring-ai.version>
+        <!-- Hutool 5.8.48：5.8.x 稳定线最新版，兼容 JDK 17；6.x 为重构大版本，暂不稳定不升级 -->
+        <hutool.version>5.8.48</hutool.version>
+        <!-- MapStruct 1.6.3：编译期生成对象映射实现（无反射），适配 JDK 17 与 Spring Boot 3.5.x -->
+        <mapstruct.version>1.6.3</mapstruct.version>
+        <!-- Lombok 1.18.38：与 Spring Boot 3.5.13 管理的版本对齐，用于注解处理器路径显式声明 -->
+        <lombok.version>1.18.38</lombok.version>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- 参数校验（Jakarta Validation / Hibernate Validator），版本由 Spring Boot BOM 管理，与 Boot 3.5.13 严格兼容 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- Redis 客户端（默认 Lettuce），版本由 Spring Boot BOM 管理 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- Spring Data MongoDB（含 mongodb-driver-sync 5.x），版本由 Spring Boot BOM 管理：
+             Boot 3.5.13 对应 Spring Data MongoDB 4.5.x / Driver 5.x，与 JDK 17 兼容；
+             用于会话/消息等文档型数据存储（如切会话时的会话记录重写） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-mongodb</artifactId>
+        </dependency>
+
+        <!-- MySQL 驱动，版本由 Spring Boot BOM 管理（Boot 3.5.x 管理 mysql-connector-j 9.x，兼容 MySQL 8.x） -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- MyBatis-Plus 持久层框架，boot3-starter 专为 Spring Boot 3.x 设计（依赖 mybatis-spring 3.x） -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
+            <version>${mybatis-plus.version}</version>
+        </dependency>
+        <!-- 自 3.5.9 起分页插件等 SQL 解析能力拆分为独立模块，需单独引入 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+            <version>${mybatis-plus.version}</version>
+        </dependency>
+
+        <!-- Spring AI：OpenAI 兼容协议 starter，可直连 OpenAI 或 DeepSeek/通义等兼容端点；版本由 spring-ai-bom 统一管理 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>
+        </dependency>
+
+        <!-- Hutool 全量工具包（IO/加解密/日期/验证码等） -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+            <version>${hutool.version}</version>
+        </dependency>
+
+        <!-- MapStruct：编译期对象转换框架，替代手写转换代码；processor 仅编译期使用（见 maven-compiler-plugin 配置） -->
+        <dependency>
+            <groupId>org.mapstruct</groupId>
+            <artifactId>mapstruct</artifactId>
+            <version>${mapstruct.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-devtools</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <!-- Spring AI BOM：统一管理 spring-ai-* 各模块版本，避免与 Boot 版本错配 -->
+            <dependency>
+                <groupId>org.springframework.ai</groupId>
+                <artifactId>spring-ai-bom</artifactId>
+                <version>${spring-ai.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.8.1</version>
+                <configuration>
+                    <source>17</source>
+                    <target>17</target>
+                    <encoding>UTF-8</encoding>
+                    <!-- 保留方法参数名：Spring MVC 的 @PathVariable/@RequestParam 需要参数名做绑定，
+                         未继承 spring-boot-starter-parent 时须显式开启 -parameters -->
+                    <parameters>true</parameters>
+                    <!-- 注解处理器路径：lombok 先于 mapstruct 执行，
+                         lombok-mapstruct-binding 保证 MapStruct 能看到 Lombok 生成的 getter/setter -->
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok-mapstruct-binding</artifactId>
+                            <version>0.2.0</version>
+                        </path>
+                        <path>
+                            <groupId>org.mapstruct</groupId>
+                            <artifactId>mapstruct-processor</artifactId>
+                            <version>${mapstruct.version}</version>
+                        </path>
+                        <!-- 显式声明处理器路径后，需手动保留 Boot 配置元数据处理器，避免 @ConfigurationProperties 元数据缺失 -->
+                        <path>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
+                            <version>${spring-boot.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring-boot.version}</version>
+                <configuration>
+                    <mainClass>com.zzg.psychologyai.PsychologyAiApplication</mainClass>
+                    <skip>true</skip>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>repackage</id>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- 本项目导入 spring-boot-dependencies BOM 而非继承 spring-boot-starter-parent，
+                 Maven 默认 surefire 2.12.4 仅支持 JUnit 3，无法发现 JUnit 5 用例；
+                 故显式锁定 3.5.2（支持 JUnit Platform，与 JDK 17 / Boot 3.5.x 兼容） -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
+            <!-- 系统默认 JAVA_HOME 为 JDK 1.8，而项目要求 JDK 17；
+                 通过 toolchains 在编译/测试时自动选用 ~/.m2/toolchains.xml 中声明的 JDK 17，
+                 不改动全局环境变量，不影响其他 JDK 8 项目；
+                 3.2.0 为当前稳定版，兼容 Maven 3.2.5+ 与本项目 compiler 3.8.1 / surefire 3.5.2 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-toolchains-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>toolchain</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <toolchains>
+                        <jdk>
+                            <version>17</version>
+                        </jdk>
+                    </toolchains>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zzg.psychologyai.infrastructure.persistence.mapper.ConsultationSessionMapper">
+
+    <!--
+        咨询会话表（docs/ai-agent.sql 的 consultation_session 表）基础映射。
+        namespace 必须与 ConsultationSessionMapper 接口全限定名一致。
+    -->
+    <resultMap id="BaseResultMap" type="com.zzg.psychologyai.infrastructure.persistence.po.ConsultationSessionPO">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="session_title" property="sessionTitle"/>
+        <result column="started_at" property="startedAt"/>
+        <result column="last_emotion_analysis" property="lastEmotionAnalysis"/>
+        <result column="last_emotion_updated_at" property="lastEmotionUpdatedAt"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_flag" property="deletedFlag"/>
+    </resultMap>
+
+    <!-- 基础列清单，供自定义 SQL 复用 -->
+    <sql id="Base_Column_List">
+        id, user_id, session_title, started_at, last_emotion_analysis, last_emotion_updated_at,
+        create_time, update_time, created_by, updated_by, deleted_flag
+    </sql>
+
+    <!-- 会话列表摘要投影映射（对应 selectSessionSummaryPage） -->
+    <resultMap id="ConsultationSessionMap" type="com.zzg.psychologyai.infrastructure.persistence.read.ConsultationSessionDO">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="user_nickname" property="userNickname"/>
+        <result column="session_title" property="sessionTitle"/>
+        <result column="started_at" property="startedAt"/>
+        <result column="message_count" property="messageCount"/>
+        <result column="last_message_time" property="lastMessageTime"/>
+        <result column="last_message_content" property="lastMessageContent"/>
+        <result column="duration_minutes" property="durationMinutes"/>
+    </resultMap>
+
+    <!--
+        会话列表分页摘要查询：
+        - JOIN user 取昵称；
+        - 子查询 m 聚合消息条数与最后消息时间（避免 JOIN 明细导致行数膨胀）；
+        - 相关子查询取最后一条消息内容（同秒时以 id 倒序兜底，保证唯一）；
+        - duration_minutes = started_at 与最后消息时间的分钟差，无消息时为 NULL。
+    -->
+    <select id="selectSessionPage" resultMap="ConsultationSessionMap">
+        SELECT
+            s.id,
+            s.user_id,
+            u.nickname AS user_nickname,
+            s.session_title,
+            s.started_at,
+            IFNULL(m.message_count, 0) AS message_count,
+            m.last_message_time,
+            (SELECT CASE
+                WHEN LENGTH(lm.content) > 150
+                    THEN CONCAT(SUBSTRING(lm.content, 1, 150), '...')
+                ELSE lm.content
+                END AS content
+             FROM consultation_message lm
+             WHERE lm.session_id = s.id AND lm.deleted_flag = 0
+             ORDER BY lm.create_time DESC, lm.id DESC
+             LIMIT 1) AS last_message_content,
+            TIMESTAMPDIFF(MINUTE, s.started_at, m.last_message_time) AS duration_minutes
+        FROM consultation_session s
+        LEFT JOIN `user` u ON u.id = s.user_id AND u.deleted_flag = 0
+        LEFT JOIN (
+            SELECT session_id, COUNT(*) AS message_count, MAX(create_time) AS last_message_time
+            FROM consultation_message
+            WHERE deleted_flag = 0
+            GROUP BY session_id
+        ) m ON m.session_id = s.id
+        WHERE s.deleted_flag = 0
+        ${ew.customSqlSegment}
+
+    </select>
+
+</mapper>

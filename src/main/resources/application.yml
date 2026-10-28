@@ -1,0 +1,79 @@
+# 应用服务 WEB 访问端口
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+    session:
+      timeout: 30m
+
+
+spring:
+  application:
+    name: psychology-ai
+  # MySQL 数据源：默认连接 docs/ai-agent.sql 来源库，生产环境一律用环境变量覆盖
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${MYSQL_URL:jdbc:mysql://192.168.136.128:3306/ai-agent?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:123456}
+  # Redis（Lettuce 懒连接，未启动本地 Redis 不影响应用启动）
+  data:
+    redis:
+      host: ${REDIS_HOST:192.168.136.128}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:123456}
+      database: ${REDIS_DATABASE:0}
+      timeout: 5000
+    # MongoDB：使用单一 URI 作为连接配置来源（避免分字段配置被覆盖导致凭据丢失）；
+    # authSource 指定认证库（通常为 admin，与业务库 ai-agent 不同）；
+    # 密码若含 @ : / ? 等特殊字符必须做 URL 编码；生产环境用环境变量 MONGODB_URI 覆盖。
+    # 驱动默认懒连接，MongoDB 不可达不影响应用启动，首次操作时才真正建连
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://root:123456@192.168.136.128:27017/ai-agent?authSource=admin}
+  # Spring AI：OpenAI 兼容协议，可对接 DeepSeek/通义等端点
+  # 密钥禁止硬编码，通过环境变量 OPENAI_API_KEY 注入；默认占位 key 仅保证应用可启动，调用前必须覆盖
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:ee39e067f737458592f5fae46989f4e3.ojPMxr7Eb0T8kxxR}
+      base-url: ${OPENAI_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
+      chat:
+        completions-path: /chat/completions
+        options:
+          model: ${OPENAI_MODEL:glm-4-flash}
+          temperature: 0.7
+
+# MyBatis-Plus：表字段为下划线风格（见 docs/ai-agent.sql），开启驼峰映射
+mybatis-plus:
+  # XML 映射文件位置，对应 src/main/resources/mapper 目录
+  mapper-locations: 'classpath*:mapper/**/*.xml'
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    banner: true
+    db-config:
+      # 逻辑删除：对应实体属性 deletedFlag（列 deleted_flag），1已删除 0未删除
+      logic-delete-field: deletedFlag
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# Spring Security 免认证白名单（根级 security.*，区别于 spring.security.*）：
+# 后续新增免登录接口直接在此追加即可，支持 Ant 风格路径（如 /api/auth/**）
+security:
+  whitelist:
+    - /user/login
+    - /user/register
+    - /error
+    - /
+
+# JWT 认证：密钥生产环境必须通过环境变量 JWT_SECRET 覆盖（长度不低于 32 字节）
+jwt:
+  secret: ${JWT_SECRET:psychology-ai-default-jwt-secret-key-please-override}
+  expire-seconds: ${JWT_EXPIRE_SECONDS:7200}
+  header: Authorization
+  prefix: "Bearer "
+
+# 日志格式带 traceId，与 Result.traceId 一致，便于链路排查
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId}] %logger{40} - %msg%n"

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zzg.psychologyai.infrastructure.persistence.mapper.AiAnalysisTaskMapper">
+
+    <!--
+        AI分析任务表（docs/ai-agent.sql 的 ai_analysis_task 表）基础映射。
+        namespace 必须与 AiAnalysisTaskMapper 接口全限定名一致；
+        常规 CRUD 由 MyBatis-Plus BaseMapper 提供，本文件承载后续自定义 SQL，
+        避免在 Java 代码中拼接 SQL 字符串。
+    -->
+    <resultMap id="BaseResultMap" type="com.zzg.psychologyai.infrastructure.persistence.po.AiAnalysisTaskPO">
+        <id column="id" property="id"/>
+        <result column="diary_id" property="diaryId"/>
+        <result column="user_id" property="userId"/>
+        <result column="status" property="status"/>
+        <result column="task_type" property="taskType"/>
+        <result column="priority" property="priority"/>
+        <result column="retry_count" property="retryCount"/>
+        <result column="max_retry_count" property="maxRetryCount"/>
+        <result column="error_message" property="errorMessage"/>
+        <result column="result" property="result"/>
+        <result column="started_at" property="startedAt"/>
+        <result column="completed_at" property="completedAt"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_flag" property="deletedFlag"/>
+    </resultMap>
+
+    <!-- 基础列清单，供自定义 SQL 复用 -->
+    <sql id="Base_Column_List">
+        id, diary_id, user_id, status, task_type, priority, retry_count, max_retry_count,
+        error_message, result, started_at, completed_at,
+        create_time, update_time, created_by, updated_by, deleted_flag
+    </sql>
+
+</mapper>

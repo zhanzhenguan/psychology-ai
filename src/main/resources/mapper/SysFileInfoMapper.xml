@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zzg.psychologyai.infrastructure.persistence.mapper.SysFileInfoMapper">
+
+    <!--
+        系统文件信息表（docs/ai-agent.sql 的 sys_file_info 表）基础映射。
+        namespace 必须与 SysFileInfoMapper 接口全限定名一致。
+    -->
+    <resultMap id="BaseResultMap" type="com.zzg.psychologyai.infrastructure.persistence.po.SysFileInfoPO">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="original_filename" property="originalFilename"/>
+        <result column="file_name" property="fileName"/>
+        <result column="file_path" property="filePath"/>
+        <result column="file_size" property="fileSize"/>
+        <result column="content_type" property="contentType"/>
+        <result column="file_suffix" property="fileSuffix"/>
+        <result column="object_type" property="objectType"/>
+        <result column="object_id" property="objectId"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_flag" property="deletedFlag"/>
+    </resultMap>
+
+    <!-- 基础列清单，供自定义 SQL 复用 -->
+    <sql id="Base_Column_List">
+        id, user_id, original_filename, file_name, file_path, file_size, content_type,
+        file_suffix, object_type, object_id,
+        create_time, update_time, created_by, updated_by, deleted_flag
+    </sql>
+
+</mapper>

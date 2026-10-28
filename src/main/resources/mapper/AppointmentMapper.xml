@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zzg.psychologyai.infrastructure.persistence.mapper.AppointmentMapper">
+
+    <!--
+        预约表（docs/ai-agent.sql 的 appointment 表）基础映射。
+        namespace 必须与 AppointmentMapper 接口全限定名一致；
+        常规 CRUD 由 MyBatis-Plus BaseMapper 提供，本文件承载后续自定义 SQL。
+    -->
+    <resultMap id="BaseResultMap" type="com.zzg.psychologyai.infrastructure.persistence.po.AppointmentPO">
+        <id column="id" property="id"/>
+        <result column="username" property="username"/>
+        <result column="id_card" property="idCard"/>
+        <result column="department" property="department"/>
+        <result column="date" property="date"/>
+        <result column="time" property="time"/>
+        <result column="doctor_name" property="doctorName"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_flag" property="deletedFlag"/>
+    </resultMap>
+
+    <!-- 基础列清单，供自定义 SQL 复用 -->
+    <sql id="Base_Column_List">
+        id, username, id_card, department, `date`, `time`, doctor_name,
+        create_time, update_time, created_by, updated_by, deleted_flag
+    </sql>
+
+</mapper>

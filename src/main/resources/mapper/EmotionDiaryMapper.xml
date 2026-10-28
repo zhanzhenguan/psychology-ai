@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.zzg.psychologyai.infrastructure.persistence.mapper.EmotionDiaryMapper">
+
+    <!--
+        情绪日记表（docs/ai-agent.sql 的 emotion_diary 表）基础映射。
+        namespace 必须与 EmotionDiaryMapper 接口全限定名一致。
+    -->
+    <resultMap id="BaseResultMap" type="com.zzg.psychologyai.infrastructure.persistence.po.EmotionDiaryPO">
+        <id column="id" property="id"/>
+        <result column="user_id" property="userId"/>
+        <result column="diary_date" property="diaryDate"/>
+        <result column="mood_score" property="moodScore"/>
+        <result column="dominant_emotion" property="dominantEmotion"/>
+        <result column="emotion_triggers" property="emotionTriggers"/>
+        <result column="diary_content" property="diaryContent"/>
+        <result column="sleep_quality" property="sleepQuality"/>
+        <result column="stress_level" property="stressLevel"/>
+        <result column="ai_emotion_analysis" property="aiEmotionAnalysis"/>
+        <result column="ai_analysis_updated_at" property="aiAnalysisUpdatedAt"/>
+        <result column="create_time" property="createTime"/>
+        <result column="update_time" property="updateTime"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted_flag" property="deletedFlag"/>
+    </resultMap>
+
+    <!-- 基础列清单，供自定义 SQL 复用 -->
+    <sql id="Base_Column_List">
+        id, user_id, diary_date, mood_score, dominant_emotion, emotion_triggers, diary_content,
+        sleep_quality, stress_level, ai_emotion_analysis, ai_analysis_updated_at,
+        create_time, update_time, created_by, updated_by, deleted_flag
+    </sql>
+
+    <select id="adminPage" resultType="com.zzg.psychologyai.infrastructure.persistence.read.EmotionDiaryDO">
+        select
+            a.id,
+            a.user_id,
+            a.diary_date,
+            a.mood_score,
+            a.dominant_emotion,
+            a.emotion_triggers,
+            a.diary_content,
+            a.sleep_quality,
+            a.stress_level,
+            a.ai_analysis_status,
+            a.ai_emotion_analysis,
+            a.ai_analysis_updated_at,
+            a.create_time,
+            a.update_time,
+            b.username,
+            b.nickname
+        from emotion_diary a
+        left join user b on a.user_id = b.id
+        ${ew.customSqlSegment}
+    </select>
+
+</mapper>
