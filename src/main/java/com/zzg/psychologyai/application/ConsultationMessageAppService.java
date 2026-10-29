@@ -25,6 +25,7 @@ import com.zzg.psychologyai.domain.repository.ConsultationMessageRepository;
 import com.zzg.psychologyai.domain.repository.ConsultationSessionRepository;
 import com.zzg.psychologyai.infrastructure.persistence.mapper.ConsultationSessionMapper;
 import com.zzg.psychologyai.infrastructure.persistence.read.ConsultationSessionDO;
+import com.zzg.psychologyai.infrastructure.redis.RedisKeys;
 import com.zzg.psychologyai.infrastructure.security.CurrentUserUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,12 +36,14 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -58,6 +61,15 @@ public class ConsultationMessageAppService {
     /** 落库的 AI 模型标识 */
     private static final String AI_MODEL = "open-ai";
 
+    /** 流式接口单用户最大并发数 */
+    private static final long MAX_CONCURRENT_STREAMS = 3;
+
+    /** 流式接口频率限制：窗口内最大请求数 */
+    private static final long MAX_REQUESTS_PER_WINDOW = 20;
+
+    /** 频率限制窗口时长（秒） */
+    private static final long RATE_LIMIT_WINDOW_SECONDS = 60;
+
     private final ChatClient chatClient;
     private final ChatMemory chatMemory;
 
@@ -69,6 +81,7 @@ public class ConsultationMessageAppService {
     private final ConsultationSessionMapper consultationSessionMapper;
 
     private final ObjectMapper objectMapper;
+    private final StringRedisTemplate stringRedisTemplate;
 
 
     @Transactional(rollbackFor = Exception.class)
@@ -112,18 +125,14 @@ public class ConsultationMessageAppService {
      * @param size 每页条数
      * @return 分页结果 {records, total, size, current, pages}
      */
-    public PageResult<ChatSessionView> page(long page, long size, long pageNum, long pageSize) {
-        QueryWrapper wrapper = new QueryWrapper<>();
+    public PageResult<ChatSessionView> page(long page, long size) {
         // 会话列表只查本人数据，userId 必须来自登录上下文而非请求参数（防越权）
-        if (pageNum > 0 && pageSize > 0) {
-            Long userId = CurrentUserUtils.getCurrentUserId();
-            if (userId == null) {
-                throw new BizException(ResultCode.UNAUTHORIZED, "用户未登录");
-            }
-            page = pageNum;
-            size = pageSize;
-            wrapper.eq(userId != null, "s.user_id", userId);
+        Long userId = CurrentUserUtils.getCurrentUserId();
+        if (userId == null) {
+            throw new BizException(ResultCode.UNAUTHORIZED, "用户未登录");
         }
+        QueryWrapper wrapper = new QueryWrapper<>();
+        wrapper.eq("s.user_id", userId);
         wrapper.orderByDesc("m.last_message_time");
         wrapper.orderByDesc("s.id");
         Page<ConsultationSessionDO> result = consultationSessionMapper.selectSessionPage(new Page<>(page, size), wrapper);
@@ -134,14 +143,26 @@ public class ConsultationMessageAppService {
 
     @Transactional(rollbackFor = Exception.class)
     public void delete(Long sessionId) {
-        consultationSessionRepository.findById(sessionId)
+        // 越权防护：会话必须存在且属于当前登录用户，否则按存在性/归属分别报 404/403
+        ConsultationSession session = consultationSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BizException(ResultCode.NOT_FOUND, "会话不存在"));
+        Long currentUserId = CurrentUserUtils.getCurrentUserId();
+        if (!ObjectUtil.equals(session.getUserId(), currentUserId)) {
+            throw new BizException(ResultCode.FORBIDDEN, "无权操作该会话");
+        }
         consultationSessionRepository.deleteById(sessionId);
         consultationMessageRepository.deleteBySessionId(sessionId);
     }
 
 
     public List<ChatMessageView> messages(Long sessionId) {
+        // 越权防护：先校验会话归属，再返回消息列表，防止读取他人会话内容
+        ConsultationSession session = consultationSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new BizException(ResultCode.NOT_FOUND, "会话不存在"));
+        Long currentUserId = CurrentUserUtils.getCurrentUserId();
+        if (!ObjectUtil.equals(session.getUserId(), currentUserId)) {
+            throw new BizException(ResultCode.FORBIDDEN, "无权访问该会话");
+        }
         return consultationSessionRepository.findMessagesBySessionId(sessionId).stream()
                 .map(ChatMessageView::from).toList();
     }
@@ -164,13 +185,23 @@ public class ConsultationMessageAppService {
     public Flux<String> streamPsychologyChat(Long userId, Long sessionId, String userMessage) {
 
         return Flux.create(sink -> {
+            // 0. 限流：先检查频率窗口，再检查并发占用，通过后立即占用并发槽位
+            checkRateLimit(userId);
+            String concurrentKey = RedisKeys.chatStreamLimit(userId) + ":concurrent";
+            if (!tryAcquireConcurrent(concurrentKey)) {
+                sink.error(new BizException(ResultCode.TOO_MANY_REQUESTS, "当前对话请求过多，请稍后再试"));
+                return;
+            }
+
             // 1. 会话存在性 + 归属校验，防止越权访问他人会话（IDOR）
             Optional<ConsultationSession> sessionOpt = consultationSessionRepository.findById(sessionId);
             if (sessionOpt.isEmpty()) {
+                releaseConcurrent(concurrentKey);
                 sink.error(new BizException(ResultCode.NOT_FOUND, "会话不存在"));
                 return;
             }
             if (!ObjectUtil.equals(sessionOpt.get().getUserId(), userId)) {
+                releaseConcurrent(concurrentKey);
                 sink.error(new BizException(ResultCode.FORBIDDEN, "无权访问该会话"));
                 return;
             }
@@ -218,42 +249,91 @@ public class ConsultationMessageAppService {
                             // 落库失败只记录日志，不能让异常阻断 SSE 正常收尾，否则前端会一直挂起
                             log.error("AI流式回复落库失败, sessionId={}", sessionId, e);
                         } finally {
+                            releaseConcurrent(concurrentKey);
                             sink.complete();
                         }
                     })
                     .doOnError(error -> {
                         log.error("AI流式对话异常, sessionId={}", sessionId, error);
+                        releaseConcurrent(concurrentKey);
                         sink.error(error);
                     })
                     .subscribe();
 
             // 5. 客户端断连/下游取消时同步取消上游 AI 请求，避免模型侧空转计费、
             //    以及向已取消的 sink 继续发射
-            sink.onCancel(upstream::dispose);
-            sink.onDispose(upstream::dispose);
+            sink.onCancel(() -> {
+                upstream.dispose();
+                releaseConcurrent(concurrentKey);
+            });
+            sink.onDispose(() -> {
+                upstream.dispose();
+                releaseConcurrent(concurrentKey);
+            });
         }, FluxSink.OverflowStrategy.BUFFER);
     }
 
     /**
-     * 分析会话内所有消息，返回情绪标签
+     * 频率限制：固定窗口计数，窗口内超过阈值则抛 429
+     */
+    private void checkRateLimit(Long userId) {
+        String key = RedisKeys.chatStreamLimit(userId) + ":rate";
+        Long count = stringRedisTemplate.opsForValue().increment(key);
+        if (count != null && count == 1) {
+            stringRedisTemplate.expire(key, Duration.ofSeconds(RATE_LIMIT_WINDOW_SECONDS));
+        }
+        if (count != null && count > MAX_REQUESTS_PER_WINDOW) {
+            throw new BizException(ResultCode.TOO_MANY_REQUESTS, "请求过于频繁，请稍后再试");
+        }
+    }
+
+    /**
+     * 尝试占用并发槽位：当前并发数未达上限时 +1 并返回 true
+     */
+    private boolean tryAcquireConcurrent(String key) {
+        Long current = stringRedisTemplate.opsForValue().increment(key);
+        if (current != null && current == 1) {
+            stringRedisTemplate.expire(key, Duration.ofSeconds(300));
+        }
+        if (current != null && current > MAX_CONCURRENT_STREAMS) {
+            stringRedisTemplate.opsForValue().decrement(key);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * 释放并发槽位：流结束/取消/异常时调用，避免槽位泄漏
+     */
+    private void releaseConcurrent(String key) {
+        stringRedisTemplate.opsForValue().decrement(key);
+    }
+
+    /**
+     * 查询会话最新一次情绪分析结果。
+     * <p>
+     * 越权防护：必须校验会话归属，防止读取他人会话的情绪分析数据。
      *
-     * @param sessionId
-     * @return
+     * @param sessionId 会话ID（可带 "session_" 前缀）
+     * @return 情绪分析结果；会话不存在或解析失败时返回 empty
      */
     public Optional<EmotionAnalyzeDTO> emotion(String sessionId) {
         Long id = Long.valueOf(sessionId.replace("session_", ""));
-        Optional<ConsultationSession> sessionOpt = consultationSessionRepository.findById(id);
-        if (sessionOpt.isEmpty()) {
+        ConsultationSession session = consultationSessionRepository.findById(id)
+                .orElseThrow(() -> new BizException(ResultCode.NOT_FOUND, "会话不存在"));
+        Long currentUserId = CurrentUserUtils.getCurrentUserId();
+        if (!ObjectUtil.equals(session.getUserId(), currentUserId)) {
+            throw new BizException(ResultCode.FORBIDDEN, "无权访问该会话");
+        }
+        String lastEmotionAnalysis = session.getLastEmotionAnalysis();
+        if (StrUtil.isBlank(lastEmotionAnalysis)) {
             return Optional.empty();
         }
-        ConsultationSession session = sessionOpt.get();
-        String lastEmotionAnalysis = session.getLastEmotionAnalysis();
         try {
-            EmotionAnalyzeDTO dto = objectMapper.readValue(lastEmotionAnalysis, EmotionAnalyzeDTO.class);
-            return Optional.ofNullable(dto);
+            return Optional.ofNullable(objectMapper.readValue(lastEmotionAnalysis, EmotionAnalyzeDTO.class));
         } catch (JsonProcessingException e) {
             log.error("解析情绪标签失败, sessionId={},lastEmotionAnalysis={}", sessionId, lastEmotionAnalysis, e);
+            return Optional.empty();
         }
-        return Optional.empty();
     }
 }

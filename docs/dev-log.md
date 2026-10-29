@@ -299,3 +299,112 @@
 - **改动文件**：`pom.xml`（新增 starter 依赖并注释版本来源与用途）、`src/main/resources/application.yml`（`spring.data.mongodb.uri`）。
 - **改动内容**：MongoDB 采用单一 URI 配置源 `${MONGODB_URI:mongodb://root:123456@192.168.136.128:27017/ai-agent?authSource=admin}`，默认与 MySQL/Redis 同主机，业务库 ai-agent，认证库 admin；注释说明凭据特殊字符需 URL 编码、生产用环境变量覆盖、驱动懒连接不影响启动。未新增 MongoConfig 类——Spring Boot 自动装配已提供 MongoClient/MongoTemplate。
 - **状态**：已完成并验证。`mvn compile` BUILD SUCCESS；`mvn dependency:list` 确认 mongodb 相关构件版本由 BOM 正确解析。实际连通性待 192.168.136.128 上 MongoDB 服务与账号确认后联调（若报 Unauthorized，优先检查 authSource 与账号所属库是否一致）。
+
+### Step 1 P0 缺陷修复 + Step 2 会话接口越权（HELP.md 计划）
+
+- **背景**：按 `HELP.md` 分步改造计划执行 Step 1 与 Step 2 中越权部分；盘点时部分缺陷已被前一轮修复，本轮核实后仅处理真实仍存在的问题。
+- **改动文件**：
+  - `application/EmotionDiaryAppService.java`：`adminPage` 循环内 `diaryContent`/`aiAnalysisStatus` 判空；`hasAiEmotionAnalysis` 由 `String.equals(枚举)`（恒 false）改为 `AnalysisStatusEnum.COMPLETED.getValue().equals(...)`。
+  - `application/ConsultationMessageAppService.java`：`delete`/`messages`/`emotion` 三个方法统一在应用服务内校验会话归属——先 `findById` 不存在抛 404，再比较 `session.userId` 与 `CurrentUserUtils.getCurrentUserId()`，不一致抛 403；`emotion` 增加空分析结果保护。
+  - `interfaces/controller/ChatSessionController.java`：移除接口层对 `ConsultationSessionMapper` 的直接依赖，`emotions` 改为调用应用服务 `emotion(sessionId)`，不再直接 `selectById` 查 PO。
+- **改动内容**：
+  - 管理端日记分页：空字段不再 NPE，「是否已分析」判定结果正确。
+  - 会话消息列表、删除会话、情绪分析查询均增加归属校验，跨用户访问返回 403。
+  - 接口层不再出现 `ConsultationSessionMapper` / `ConsultationSessionPO`。
+### 修复 chat_memory TTL 索引启动告警（MongoDB 认证问题）
+
+- **背景**：应用启动持续输出 `chat_memory TTL 索引创建失败，MongoDB 可能未就绪` 告警。
+- **排查过程**：
+  1. `Test-NetConnection 192.168.136.128:27017` → True，端口可达，排除网络问题。
+  2. 用项目内 mongodb-driver-sync 5.5.2 写临时探测程序（置于系统临时目录）验证三种连接方式：
+     - 匿名连接：`ping` 成功 `{"ok":1.0}`；
+     - `root:123456@authSource=admin`：`MongoSecurityException` 认证失败；
+     - `root:123456@authSource=ai-agent`：同样认证失败。
+  3. 匿名连接执行 `createIndexes`：返回 `error 13 Unauthorized: command createIndexes requires authentication`。
+- **结论**：该 MongoDB **已开启认证**，匿名仅能执行 `ping` 等无需鉴权命令；当前配置里的 `root/123456` 并非该实例的有效凭据。告警根因是启动期在 `AiConfig` 中执行了需要鉴权的 DDL。
+- **改动文件**：
+  - `infrastructure/ai/config/AiConfig.java`：移除启动期 `chatMemoryTtlIndex` Bean（不再在上下文初始化时做 DDL）。
+  - `infrastructure/ai/repository/MongoChatMemoryRepository.java`：改为首次成功写入后懒创建 TTL 索引（`AtomicBoolean` 保证每进程仅尝试一次，失败只记录一次简短 warn 不打印堆栈）；`findConversationIds`/`findByConversationId`/`saveAll`/`deleteByConversationId` 全部增加异常降级，MongoDB 不可用时聊天继续可用，仅丢失持久化记忆。
+  - `src/main/resources/application.yml`：默认 URI 去掉账号密码（`mongodb://192.168.136.128:27017/ai-agent`），注释说明开启认证后需用 `MONGODB_URI` 注入凭据。
+  - `README.md`：同步 `MONGODB_URI` 默认值说明。
+- **状态**：代码已完成并验证，`mvn test` Tests run: 2, Failures: 0, Errors: 0 — BUILD SUCCESS，启动告警已消失。
+- **待办（需用户提供）**：MongoDB 实例的有效账号密码（或开启匿名写权限）。在提供正确凭据前，聊天记忆会降级为「不持久化」，重启后上下文不保留。
+
+### Step 4：聊天记忆持久化（HELP.md 计划）
+
+- **背景**：按 `HELP.md` 分步改造计划执行 Step 4，将内存聊天记忆切换为 MongoDB 持久化，解决重启丢上下文、多实例不一致问题。
+- **改动文件**：
+  - `infrastructure/ai/config/AiConfig.java`：`chatMemory` Bean 由 `InMemoryChatMemoryRepository` 改为注入 `MongoChatMemoryRepository`。
+  - `infrastructure/ai/repository/MongoChatMemoryRepository.java`：文档增加 `lastModified` 字段，每次写入刷新时间戳，供 TTL 索引使用。
+- **改动内容**：
+  - 聊天记忆从内存切换到 MongoDB，重启后历史对话上下文不丢失（依赖 MongoDB 凭据正确）。
+  - 多实例部署时各节点共享同一会话历史。
+  - TTL 索引：`lastModified` 字段 7 天未更新自动清理，防止 `chat_memory` 集合无限膨胀；索引改为首次成功写入后懒创建。
+- **状态**：已完成并验证。`mvn compile` BUILD SUCCESS；`mvn test` Tests run: 2, Failures: 0, Errors: 0 — BUILD SUCCESS。
+- **备注**：`MessageWindowChatMemory` 的 `maxMessages=30` 保留，超出窗口的消息会被截断，不会无限写入 MongoDB。MongoDB 认证问题见上一条记录。
+
+### 参照 InMemoryChatMemoryRepository 重写 ChatMessages + MongoChatMemoryRepository
+
+- **背景**：`ChatMessages` 的 ObjectId 主键、Repository 里自建的 record 内部类与 Document 字段不一致，且 Repository 缺少 InMemory 自带的 Assert 参数校验。拿到 `InMemoryChatMemoryRepository` 源码后参照其设计对齐。
+- **改动文件**：
+  - `infrastructure/mongo/po/ChatMessages.java`：去掉 ObjectId，conversationId 作为 `@Id` 主键（对齐 InMemory 中 Map 的 key）；集合名统一为 `chat_messages`；新增 `lastModified`（Instant）供 TTL 索引。
+  - `infrastructure/ai/repository/MongoChatMemoryRepository.java`：集合名对齐 Document 改为 `chat_messages`；Repository 不再自建 ChatMemoryDoc record，直接复用 ChatMessages；`findByConversationId` 改用 `mongoTemplate.findById(conversationId, ChatMessages.class)`（主键查询，性能优于 Query）；upsert 用 `_id` 字段查询（天然命中主键）；补齐 InMemory 同款 Assert.hasText/notNull/noNullElements；TTL 索引字段名同步为 `lastModified`。
+- **改动内容**：
+  - Repository 与 Document 完全一致，消除了两处定义同一集合字段的冗余。
+  - 每次 saveAll 仍是整条覆盖写，与 InMemory 语义一致。
+  - 增加了参数校验（conversationId 不能为空、messages 不能为 null/含 null 元素）。
+- **状态**：已完成并验证。`mvn test` Tests run: 2, Failures: 0, Errors: 0 — BUILD SUCCESS。
+- **备注**：集合名从 `chat_memory` 改成了 `chat_messages`，之前已存在的 chat_memory 文档不会自动迁移；首次新写入会自动创建 chat_messages 集合。如需保留旧数据，需手工迁移（或让用户清理后重写）。
+
+## 2026-10-28
+
+### 情绪日记接入 ai_analysis_task 任务驱动表（AI 分析流程改造）
+
+- **背景**：原 AI 分析由 `EmotionDiaryAnalysisTask` 定时器直接轮询 `emotion_diary` 表（PENDING/FAIL 字符串状态），无任务级状态机与重试控制。现引入 `ai_analysis_task` 表作为主要驱动表：①日记保存时同事务创建分析任务；②调度器轮询任务表、关联日记提交大模型；③按结果回写任务表与日记表。
+- **依赖**：无新增（`AiAnalysisTaskPO`/`AiAnalysisTaskMapper` 此前已存在，本次接入使用）。
+- **改动文件**：
+  - 新增领域层：`domain/enums/AnalysisTaskStatusEnum.java`（0待处理/1处理中/2已完成/3失败/4已取消）、`domain/enums/AnalysisTaskTypeEnum.java`、`domain/model/AiAnalysisTask.java`（聚合根：私有构造 + create/restore 工厂，markProcessing/markCompleted/markFailed 行为方法内含重试状态机，无 setter）、`domain/repository/AiAnalysisTaskRepository.java`、`domain/port/EmotionAnalysisPort.java`（防腐端口，入参为日记聚合，返回分析结果 JSON）。
+  - 新增基础设施层：`infrastructure/persistence/repository/AiAnalysisTaskRepositoryImpl.java`（更新走 UpdateWrapper 显式 set，保证 error_message/result 可清空、update_time 显式写入）、`infrastructure/ai/task/AiAnalysisTaskScheduler.java`（每 5 分钟轮询 status=0，按优先级+创建时间升序取 10 条，claim → 调端口 → complete/fail 编排，大模型调用不包事务）。
+  - 新增应用层：`application/AiAnalysisTaskAppService.java`（claim/complete/fail 三个独立事务方法；complete 联动 diary.applyAiAnalysis，fail 在重试耗尽终态时联动 diary.markAnalysisFailed）。
+  - 修改：`application/EmotionDiaryAppService.java`（create 同事务保存 AiAnalysisTask）、`domain/model/EmotionDiary.java`（新增 applyAiAnalysis/markAnalysisFailed 行为方法）、`domain/enums/AnalysisStatusEnum.java`（新增 FAILED，修正类注释）、`infrastructure/persistence/repository/EmotionDiaryRepositoryImpl.java`（toPO/toDomain 补齐 ai_analysis_status/ai_emotion_analysis/ai_analysis_updated_at 双向映射——此前 toPO 未映射导致新建日记状态从未落库，一并修复）、`infrastructure/ai/service/EmotionDiaryAiAnalyzer.java`（实现 EmotionAnalysisPort，新增 analyze(EmotionDiary) 入口并序列化结果）。
+  - 删除：`infrastructure/ai/task/EmotionDiaryAnalysisTask.java`（旧的日记表直轮询定时器，由任务表调度器取代）。
+- **改动内容**：任务状态机 PENDING→PROCESSING→COMPLETED；失败 retry_count+1，未达 max_retry_count(默认3) 回到 PENDING 进入下轮重试，达到上限进入 FAILED 终态并联动日记 ai_analysis_status=FAILED；成功则任务回填 result/completed_at，日记回填 ai_emotion_analysis/ai_analysis_updated_at 并置 COMPLETED。
+- **状态**：已完成并验证。`mvn compile` BUILD SUCCESS。真实大模型链路需配置 OPENAI_* 环境变量并联调；ai_analysis_task 表结构沿用 docs/ai-agent.sql 既有定义，无需 DDL 变更。
+
+## 2026-10-29
+
+### AiAnalysisTaskRepository 拆分 save 为 insert/update（单一职责）
+
+- **背景**：用户要求仓储方法每个只做一件事，原 `save(task)` 按 id 是否为 null 兼具插入与更新两条路径，语义不清晰。
+- **依赖**：无新增。
+- **改动文件**：`domain/repository/AiAnalysisTaskRepository.java`（`save` 拆为 `Long insert(task)` 与 `void update(task)`）、`infrastructure/persistence/repository/AiAnalysisTaskRepositoryImpl.java`（insert 走 mapper.insert 回写主键；update 走 UpdateWrapper 显式 set 业务字段）；调用方同步修改：`application/EmotionDiaryAppService.java`（create 用 insert）、`application/AiAnalysisTaskAppService.java`（claim/complete/fail 用 update）。
+- **状态**：已完成并验证。`mvn compile` BUILD SUCCESS。
+
+### 仓储层 toPO/toDomain 抽离为独立 Converter
+
+- **背景**：用户要求按 DDD 规则把仓储实现内联的私有 toPO/toDomain 转换逻辑分离到 `infrastructure/persistence/converter/`，仓储只保留数据访问编排。
+- **依赖**：无新增。
+- **改动文件**：
+  - 新增（手写 @Component，含枚举码值转换）：`converter/EmotionDiaryConverter.java`、`converter/AiAnalysisTaskConverter.java`（toDomain 走聚合 restore 工厂）、`converter/ConsultationMessageConverter.java`、`converter/ConsultationSessionConverter.java`。
+  - 修改（注入 Converter、删除内联私有转换方法）：`repository/EmotionDiaryRepositoryImpl.java`、`repository/AiAnalysisTaskRepositoryImpl.java`、`repository/ConsultationMessageImpl.java`、`repository/ConsultationSessionRepositoryImpl.java`（其私有 toMessageDomain 与消息转换重复，统一改用 ConsultationMessageConverter）、`repository/ArticleRepositoryImpl.java`（findById 改用已有 ArticleConverter，删除与转换器重复的死代码私有 toPO/toDomain，清理未用 import）。
+- **状态**：已完成并验证。`mvn compile` BUILD SUCCESS；`mvn test` BUILD SUCCESS（Spring 上下文装配通过，Converter Bean 注入正常）。既有 UserPersistenceConverter/ArticleConverter 为 MapStruct 接口风格，本次未改动。
+
+### Converter 由手写改为 MapStruct（对齐项目既有风格）
+
+- **背景**：用户要求 Converter 按项目惯例使用 MapStruct（项目已有 ArticleConverter/UserPersistenceConverter 均为 MapStruct 接口）。
+- **依赖**：无新增（MapStruct 注解处理器此前已配置）。
+- **改动文件**（4 个 Converter 由手写 @Component class 改为 @Mapper(componentModel="spring") interface）：
+  - `converter/EmotionDiaryConverter.java`：@Mapping 处理 analysisStatus ↔ aiAnalysisStatus 字段名差异，枚举↔字符串由 default 方法 statusToValue/valueToStatus 承载；
+  - `converter/AiAnalysisTaskConverter.java`：聚合无公开构造，toDomain 为 default 方法走 AiAnalysisTask.restore 工厂，toPO 由 MapStruct 生成，枚举→码值由 default 方法承载；
+  - `converter/ConsultationMessageConverter.java`：SenderType/MessageType 双向枚举转换由 default 方法承载；
+  - `converter/ConsultationSessionConverter.java`：纯字段映射。
+- **注意点**：增量编译可能不会为改写的接口重新生成 Impl（本次 EmotionDiaryConverterImpl 一度缺失），改动 Converter 接口后需 `mvn clean compile` 全量重建；已核对 target/generated-sources 下 4 个 Impl 均生成且映射正确。
+- **状态**：已完成并验证。`mvn clean compile` BUILD SUCCESS；`mvn test` Tests run: 2, Failures: 0 — BUILD SUCCESS。
+
+### AiAnalysisTaskRepositoryImpl.update 去除 UpdateWrapper，改 updateById
+
+- **背景**：用户要求不使用 UpdateWrapper；任务表更新改为标准 updateById(po)。
+- **依赖**：无新增。
+- **改动文件**：`repository/AiAnalysisTaskRepositoryImpl.java`（update 改 updateById，删除 UpdateWrapper 显式 set 与手写 update_time，update_time 回到 MetaObjectHandler 自动填充）；`po/AiAnalysisTaskPO.java`（errorMessage/result 加 @TableField(updateStrategy = FieldStrategy.ALWAYS)，保证可空字段显式清空语义不丢失）；`repository/ArticleRepositoryImpl.java`（清理未使用的 UpdateWrapper/LambdaUpdateWrapper import）。
+- **注意点**：MyBatis-Plus 3.5.17 已移除 FieldStrategy.IGNORED（旧名），须用 FieldStrategy.ALWAYS；写错枚举值会导致 javac 报错并连带 Lombok 处理失败，出现全项目"找不到 getter/setter"的级联假错误。
+- **状态**：已完成并验证。`mvn clean compile` BUILD SUCCESS；`mvn test` Tests run: 2, Failures: 0。

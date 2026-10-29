@@ -39,4 +39,19 @@ public final class RedisKeys {
     public static String userInfo(Long userId) {
         return USER_INFO + userId;
     }
+
+    /**
+     * 心理对话模块：流式接口限流（并发数 + 频率）
+     */
+    public static final String CHAT_STREAM_LIMIT = "chat:stream:limit:";
+
+    /**
+     * 拼接流式接口限流 key
+     *
+     * @param userId 用户ID
+     * @return 完整 key
+     */
+    public static String chatStreamLimit(Long userId) {
+        return CHAT_STREAM_LIMIT + userId;
+    }
 }

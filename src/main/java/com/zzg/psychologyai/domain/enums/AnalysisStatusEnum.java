@@ -3,14 +3,16 @@ package com.zzg.psychologyai.domain.enums;
 import com.baomidou.mybatisplus.annotation.EnumValue;
 
 /**
- * 用户账号状态枚举
+ * 情绪日记 AI 分析状态枚举（对应 emotion_diary.ai_analysis_status 列码值）
  */
 public enum AnalysisStatusEnum {
 
-    /** 禁用 */
+    /** 待分析 */
     PENDING("PENDING", "待分析"),
     /** 已分析 */
-    COMPLETED("COMPLETED", "已分析");
+    COMPLETED("COMPLETED", "已分析"),
+    /** 分析失败 */
+    FAILED("FAILED", "分析失败");
 
     @EnumValue
     private final String value;

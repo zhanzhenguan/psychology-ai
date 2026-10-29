@@ -22,7 +22,13 @@ import java.util.function.Function;
 @Data
 public class PageResult<T> implements Serializable {
 
-    /** 当前页数据 */
+    /**
+     * 每页条数上限，防止恶意大分页拖垮数据库
+     */
+    public static final long MAX_PAGE_SIZE = 100;
+
+    /**
+     * 当前页数据 */
     private List<T> records;
 
     /** 总记录数 */
@@ -77,17 +83,12 @@ public class PageResult<T> implements Serializable {
     //-----------------------------------静态方法-----------------------------------------------------------
 
     /**
-     * 分页构造方法
-     * @param records
-     * @param total
-     * @param size
-     * @param current
-     * @return
-     * @param <T>
+     * 分页构造方法（size 超过上限时自动截断）
      */
     public static <T> PageResult<T> of(List<T> records, long total, long size, long current) {
-        long pages = size == 0 ? 0 : (total + size - 1) / size;
-        return new PageResult<>(records, total, size, current, pages);
+        long safeSize = Math.min(size, MAX_PAGE_SIZE);
+        long pages = safeSize == 0 ? 0 : (total + safeSize - 1) / safeSize;
+        return new PageResult<>(records, total, safeSize, current, pages);
     }
 
 

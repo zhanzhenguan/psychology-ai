@@ -9,7 +9,9 @@ import com.zzg.psychologyai.common.result.PageResult;
 import com.zzg.psychologyai.common.enums.ResultCode;
 import com.zzg.psychologyai.common.exception.BizException;
 import com.zzg.psychologyai.domain.enums.AnalysisStatusEnum;
+import com.zzg.psychologyai.domain.model.AiAnalysisTask;
 import com.zzg.psychologyai.domain.model.EmotionDiary;
+import com.zzg.psychologyai.domain.repository.AiAnalysisTaskRepository;
 import com.zzg.psychologyai.domain.repository.EmotionDiaryRepository;
 import com.zzg.psychologyai.infrastructure.persistence.mapper.EmotionDiaryMapper;
 import com.zzg.psychologyai.infrastructure.persistence.mapper.UserMapper;
@@ -30,9 +32,13 @@ public class EmotionDiaryAppService {
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private final EmotionDiaryRepository emotionDiaryRepository;
+    private final AiAnalysisTaskRepository aiAnalysisTaskRepository;
     private final EmotionDiaryMapper emotionDiaryMapper;
     private final UserMapper userMapper;
 
+    /**
+     * 创建情绪日记：同事务保存 AI 分析任务（任务表作为后续分析流程的驱动表）
+     */
     @Transactional(rollbackFor = Exception.class)
     public EmotionDiaryView create(CreateEmotionDiaryCommand command) {
         EmotionDiary diary = new EmotionDiary();
@@ -46,6 +52,7 @@ public class EmotionDiaryAppService {
         diary.setStressLevel(command.stressLevel());
         diary.setAnalysisStatus(AnalysisStatusEnum.PENDING);
         EmotionDiary save = emotionDiaryRepository.save(diary);
+        aiAnalysisTaskRepository.insert(AiAnalysisTask.create(save.getId(), save.getUserId()));
         return EmotionDiaryView.from(save);
     }
 
@@ -58,8 +65,11 @@ public class EmotionDiaryAppService {
         wrapper.orderByDesc("a.diary_date");
         Page<EmotionDiaryDO> page = emotionDiaryMapper.adminPage(new Page(currentPage, size), wrapper);
         page.getRecords().forEach(record ->{
-            record.setContentLength(record.getDiaryContent().length());
-            record.setHasAiEmotionAnalysis(record.getAiAnalysisStatus().equals(AnalysisStatusEnum.COMPLETED));
+            // diaryContent/aiAnalysisStatus 允许为 null，必须先判空，避免 NPE
+            String content = record.getDiaryContent();
+            record.setContentLength(content == null ? 0 : content.length());
+            // aiAnalysisStatus 是 String 列码，不能与枚举直接 equals（恒 false）；改用码值比较
+            record.setHasAiEmotionAnalysis(AnalysisStatusEnum.COMPLETED.getValue().equals(record.getAiAnalysisStatus()));
             record.setCreatedAt(record.getCreateTime());
             record.setUpdatedAt(record.getUpdateTime());
         });

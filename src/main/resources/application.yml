@@ -29,7 +29,7 @@ spring:
     # 密码若含 @ : / ? 等特殊字符必须做 URL 编码；生产环境用环境变量 MONGODB_URI 覆盖。
     # 驱动默认懒连接，MongoDB 不可达不影响应用启动，首次操作时才真正建连
     mongodb:
-      uri: ${MONGODB_URI:mongodb://root:123456@192.168.136.128:27017/ai-agent?authSource=admin}
+      uri: ${MONGODB_URI:mongodb://root:123456@192.168.136.128:27017/ai-agent?authSource=admin&authMechanism=SCRAM-SHA-256}
   # Spring AI：OpenAI 兼容协议，可对接 DeepSeek/通义等端点
   # 密钥禁止硬编码，通过环境变量 OPENAI_API_KEY 注入；默认占位 key 仅保证应用可启动，调用前必须覆盖
   ai:

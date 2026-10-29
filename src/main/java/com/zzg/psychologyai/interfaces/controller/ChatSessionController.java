@@ -10,8 +10,6 @@ import com.zzg.psychologyai.common.enums.ResultCode;
 import com.zzg.psychologyai.common.exception.BizException;
 import com.zzg.psychologyai.common.result.PageResult;
 import com.zzg.psychologyai.common.result.Result;
-import com.zzg.psychologyai.infrastructure.persistence.mapper.ConsultationSessionMapper;
-import com.zzg.psychologyai.infrastructure.persistence.po.ConsultationSessionPO;
 import com.zzg.psychologyai.infrastructure.security.CurrentUserUtils;
 import com.zzg.psychologyai.interfaces.request.ChatSession;
 import com.zzg.psychologyai.interfaces.response.NewSessionResponse;
@@ -42,7 +40,6 @@ import java.util.Map;
 public class ChatSessionController {
 
     private final ConsultationMessageAppService chatSessionAppService;
-    private final ConsultationSessionMapper chatSessionMapper;
 
     @PostMapping("/session/start")
     public Result<NewSessionResponse> start(@RequestBody ChatSession.StartSessionRequest request) {
@@ -53,22 +50,17 @@ public class ChatSessionController {
     /**
      * 分页查询当前登录用户的会话列表。
      * <p>
-     * 路径：GET /api/psychological-chat/sessions
-     *pageNum
-     * 1
-     * pageSize
-     * 10
+     * 路径：GET /api/psychological-chat/sessions?page=1&size=10
+     *
      * @param page 页码（默认 1）
-     * @param size 每页条数（默认 10）
+     * @param size 每页条数（默认 10，上限 100）
      * @return 分页结果：records 含 sessionTitle/startedAt/userNickname/
      *         lastMessageContent/lastMessageTime/messageCount/durationMinutes
      */
     @GetMapping("/sessions")
     public Result<PageResult<ChatSessionView>> page(@RequestParam(defaultValue = "1") long page,
-                                                    @RequestParam(defaultValue = "10") long size,
-                                                    @RequestParam(defaultValue = "0") long pageNum,
-                                                    @RequestParam(defaultValue = "0") long pageSize) {
-        PageResult<ChatSessionView> pageResult = chatSessionAppService.page(page, size, pageNum, pageSize);
+                                                    @RequestParam(defaultValue = "10") long size) {
+        PageResult<ChatSessionView> pageResult = chatSessionAppService.page(page, size);
         return Result.success(pageResult);
     }
 
@@ -84,21 +76,19 @@ public class ChatSessionController {
     }
 
     /**
-     * 会话情绪分析结果：查 consultation_session.last_emotion_analysis（JSON）
+     * 会话情绪分析结果：查询该会话最近一次 AI 情绪分析（JSON）
+     * <p>
+     * 会话不存在或越权访问由应用服务抛出 404/403；分析结果为空时返回空 Map。
      */
     @GetMapping("/session/{sessionId}/emotion")
     public Result<Map<String, Object>> emotions(@PathVariable String sessionId) {
-        Long id = Long.valueOf(sessionId.replace("session_", ""));
-        ConsultationSessionPO po = chatSessionMapper.selectById(id);
-        if (po == null) {
-            return Result.success(Map.of());
-        }
-        Map<String, Object> data = Map.of(
-                "sessionId", sessionId,
-                "lastEmotionAnalysis", po.getLastEmotionAnalysis() == null ? "" : po.getLastEmotionAnalysis(),
-                "lastEmotionUpdatedAt", po.getLastEmotionUpdatedAt() == null ? "" : po.getLastEmotionUpdatedAt().toString()
-        );
-        return Result.success(data);
+        return chatSessionAppService.emotion(sessionId)
+                .<Result<Map<String, Object>>>map(dto -> Result.success(Map.of(
+                        "sessionId", sessionId,
+                        "lastEmotionAnalysis", JSONUtil.toJsonStr(dto),
+                        "lastEmotionUpdatedAt", ""
+                )))
+                .orElseGet(() -> Result.success(Map.of()));
     }
 
 

@@ -73,6 +73,23 @@ public class EmotionDiary extends AggregateRoot {
     public LocalDateTime getAiAnalysisUpdatedAt() { return aiAnalysisUpdatedAt; }
     public void setAiAnalysisUpdatedAt(LocalDateTime aiAnalysisUpdatedAt) { this.aiAnalysisUpdatedAt = aiAnalysisUpdatedAt; }
 
+    /**
+     * 应用 AI 分析结果：回填结构化分析 JSON，状态置为已分析
+     */
+    public void applyAiAnalysis(String analysisJson) {
+        this.aiEmotionAnalysis = analysisJson;
+        this.analysisStatus = AnalysisStatusEnum.COMPLETED;
+        this.aiAnalysisUpdatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * 标记 AI 分析失败（分析任务重试耗尽后的终态联动）
+     */
+    public void markAnalysisFailed() {
+        this.analysisStatus = AnalysisStatusEnum.FAILED;
+        this.aiAnalysisUpdatedAt = LocalDateTime.now();
+    }
+
 
 
 

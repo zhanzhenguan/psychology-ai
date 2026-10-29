@@ -1,6 +1,8 @@
 package com.zzg.psychologyai.infrastructure.persistence.po;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.zzg.psychologyai.infrastructure.persistence.entity.BaseEntity;
@@ -62,13 +64,17 @@ public class AiAnalysisTaskPO extends BaseEntity {
     private Integer maxRetryCount;
 
     /**
-     * 失败错误信息（含异常堆栈摘要）
+     * 失败错误信息（含异常堆栈摘要）。
+     * updateStrategy=ALWAYS：任务完成后需显式清空，null 也写入
      */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String errorMessage;
 
     /**
-     * 分析结果（JSON 字符串）
+     * 分析结果（JSON 字符串）。
+     * updateStrategy=ALWAYS：null 也写入，避免更新语义依赖非空判断
      */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String result;
 
     /**

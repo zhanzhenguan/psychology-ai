@@ -1,6 +1,9 @@
 package com.zzg.psychologyai.infrastructure.ai.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zzg.psychologyai.domain.model.EmotionDiary;
+import com.zzg.psychologyai.domain.port.EmotionAnalysisPort;
 import com.zzg.psychologyai.infrastructure.ai.result.EmotionAnalysisResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -8,14 +11,16 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
- * 情绪日记 AI 分析服务：把用户提交的 6 个字段拼成 prompt，调大模型输出结构化情绪分析 JSON。
+ * 情绪日记 AI 分析服务（领域 EmotionAnalysisPort 的适配实现）：
+ * 把用户提交的 6 个字段拼成 prompt，调大模型输出结构化情绪分析 JSON。
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class EmotionDiaryAiAnalyzer {
+public class EmotionDiaryAiAnalyzer implements EmotionAnalysisPort {
 
     private static final String[] MOOD_LABELS = {
             "绝望崩溃", "消沉抑郁", "焦虑烦躁", "低落不悦", "平静淡然",
@@ -29,6 +34,31 @@ public class EmotionDiaryAiAnalyzer {
 
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
+
+    /**
+     * 领域端口入口：以情绪日记聚合为入参，返回可落库的分析结果 JSON
+     */
+    @Override
+    public Optional<String> analyze(EmotionDiary diary) {
+        EmotionAnalysisResult result = analyze(
+                diary.getMoodScore(),
+                diary.getDominantEmotion(),
+                diary.getEmotionTriggers(),
+                diary.getDiaryContent(),
+                diary.getSleepQuality(),
+                diary.getStressLevel(),
+                System.currentTimeMillis()
+        );
+        if (result == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(objectMapper.writeValueAsString(result));
+        } catch (JsonProcessingException e) {
+            log.error("情绪分析结果序列化失败, diaryId={}", diary.getId(), e);
+            return Optional.empty();
+        }
+    }
 
     public EmotionAnalysisResult analyze(Integer moodScore,
                                         String dominantEmotion,

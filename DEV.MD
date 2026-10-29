@@ -11,23 +11,6 @@
 
 
 # 需要执行的任务（任务执行完成后，编译项目;以下无任务时AI不执行任何操作!!!）:
-1.  结束时需要调用 工具分析当前用户此时的情绪
-2.  会话重新写入在切会话时
 
-
-
-
-emotion_diary 表中存储用户提交信息后 需要轮询到大模型分析用户情绪
-mood_score ['绝望崩溃', '消沉抑郁', '焦虑烦躁', '低落不悦', '平静淡然', '轻松惬意', '愉悦舒心', '欢欣满足', '兴奋欣喜', '极致幸福']对应 1-10   ，  
-dominant_emotion，
-emotion_triggers，
-diary_content ，
-sleep_quality [很差，较差，一般，良好，优秀] 对应0-5,
-stress_level [很低，较低，中等，较高，很高] 对应0-5,
-这6个字段作为用户的情绪表述，进行情绪分析。
-分析完成后更新：
-ai_analysis_status COMPLETED
-ai_emotion_analysis 为json格式（与 表中last_emotion_analysis 字段格式一致）
-ai_analysis_updated_at
 
 
