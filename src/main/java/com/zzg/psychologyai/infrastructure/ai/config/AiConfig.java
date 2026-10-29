@@ -1,9 +1,9 @@
 package com.zzg.psychologyai.infrastructure.ai.config;
 
+import com.zzg.psychologyai.infrastructure.ai.repository.MongoChatMemoryRepository;
 import com.zzg.psychologyai.infrastructure.ai.tool.EmotionAnalysisTool;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
-import org.springframework.ai.chat.memory.InMemoryChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.context.annotation.Bean;
@@ -16,10 +16,14 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class AiConfig {
 
+    /**
+     * 聊天记忆：使用 MongoDB 持久化，替代内存实现。
+     * 重启不丢上下文，多实例部署时各节点共享同一会话历史。
+     */
     @Bean
-    public ChatMemory chatMemory() {
+    public ChatMemory chatMemory(MongoChatMemoryRepository mongoChatMemoryRepository) {
         return MessageWindowChatMemory.builder()
-                .chatMemoryRepository(new InMemoryChatMemoryRepository())
+                .chatMemoryRepository(mongoChatMemoryRepository)
                 .maxMessages(30)
                 .build();
     }
