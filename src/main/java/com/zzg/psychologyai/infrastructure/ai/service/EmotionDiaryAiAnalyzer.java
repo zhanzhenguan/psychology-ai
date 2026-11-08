@@ -5,9 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zzg.psychologyai.domain.model.EmotionDiary;
 import com.zzg.psychologyai.domain.port.EmotionAnalysisPort;
 import com.zzg.psychologyai.infrastructure.ai.result.EmotionAnalysisResult;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -19,7 +19,6 @@ import java.util.Optional;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class EmotionDiaryAiAnalyzer implements EmotionAnalysisPort {
 
     private static final String[] MOOD_LABELS = {
@@ -32,8 +31,19 @@ public class EmotionDiaryAiAnalyzer implements EmotionAnalysisPort {
             "快乐", "平静", "兴奋", "满足", "愤怒", "悲伤", "焦虑", "恐惧", "沮丧", "压力"
     );
 
+    /** 结构化分析专用 ChatClient（不注册任何工具），避免模型误调对话侧情绪工具 */
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
+
+    /**
+     * @param chatClient   无工具的结构化分析 ChatClient
+     * @param objectMapper 分析结果序列化/反序列化
+     */
+    public EmotionDiaryAiAnalyzer(@Qualifier("analysisChatClient") ChatClient chatClient,
+                                  ObjectMapper objectMapper) {
+        this.chatClient = chatClient;
+        this.objectMapper = objectMapper;
+    }
 
     /**
      * 领域端口入口：以情绪日记聚合为入参，返回可落库的分析结果 JSON
