@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+  数据分析聚合 SQL：只读统计，跨表聚合，不对应单一 PO。
+  所有查询手工过滤 deleted_flag = 0（自定义 XML 不走 MP 逻辑删除拦截）。
+-->
+<mapper namespace="com.zzg.psychologyai.infrastructure.persistence.mapper.AnalyticsMapper">
+
+    <!-- 用户总数 -->
+    <select id="countUsers" resultType="long">
+        SELECT COUNT(*) FROM `user` WHERE deleted_flag = 0
+    </select>
+
+    <!-- 活跃用户：近 N 天有会话或写日记行为的去重用户数 -->
+    <select id="countActiveUsers" resultType="long">
+        SELECT COUNT(DISTINCT t.user_id) FROM (
+            SELECT user_id FROM consultation_session
+            WHERE deleted_flag = 0 AND create_time &gt;= #{since}
+            UNION
+            SELECT user_id FROM emotion_diary
+            WHERE deleted_flag = 0 AND create_time &gt;= #{since}
+        ) t
+    </select>
+
+    <!-- 情绪日记总数 -->
+    <select id="countDiaries" resultType="long">
+        SELECT COUNT(*) FROM emotion_diary WHERE deleted_flag = 0
+    </select>
+
+    <!-- 会话总数 -->
+    <select id="countSessions" resultType="long">
+        SELECT COUNT(*) FROM consultation_session WHERE deleted_flag = 0
+    </select>
+
+    <!-- 全量日记平均心情分（1 位小数，无数据返回 0） -->
+    <select id="avgMoodScore" resultType="double">
+        SELECT IFNULL(ROUND(AVG(mood_score), 1), 0) FROM emotion_diary WHERE deleted_flag = 0
+    </select>
+
+    <!-- 今日新增用户数 -->
+    <select id="countTodayUsers" resultType="long">
+        SELECT COUNT(*) FROM `user`
+        WHERE deleted_flag = 0 AND DATE(create_time) = CURDATE()
+    </select>
+
+    <!-- 今日新增日记数 -->
+    <select id="countTodayDiaries" resultType="long">
+        SELECT COUNT(*) FROM emotion_diary
+        WHERE deleted_flag = 0 AND DATE(create_time) = CURDATE()
+    </select>
+
+    <!-- 今日新增会话数 -->
+    <select id="countTodaySessions" resultType="long">
+        SELECT COUNT(*) FROM consultation_session
+        WHERE deleted_flag = 0 AND DATE(create_time) = CURDATE()
+    </select>
+
+    <!--
+      情绪热力图明细：近 30 天，按 小时 × 星期 × 主导情绪 聚合。
+      weekday：DAYOFWEEK 返回 1=周日..7=周六，减 1 后为 0=周日..6=周六（与前端 y 轴一致）。
+    -->
+    <select id="selectEmotionHeatmapRows" resultType="map">
+        SELECT HOUR(create_time)              AS hour,
+               DAYOFWEEK(create_time) - 1     AS weekday,
+               IFNULL(dominant_emotion, '平静') AS emotion,
+               COUNT(*)                       AS cnt,
+               ROUND(AVG(mood_score), 1)      AS avgScore
+        FROM emotion_diary
+        WHERE deleted_flag = 0 AND create_time &gt;= #{start}
+        GROUP BY HOUR(create_time), DAYOFWEEK(create_time) - 1, IFNULL(dominant_emotion, '平静')
+    </select>
+
+    <!--
+      情绪趋势明细：近 30 天，按 日期 × 主导情绪 聚合。
+      日期取 diary_date（业务记录日期），无则回退 create_time。
+    -->
+    <select id="selectEmotionTrendRows" resultType="map">
+        SELECT DATE_FORMAT(IFNULL(diary_date, DATE(create_time)), '%Y-%m-%d') AS date,
+               IFNULL(dominant_emotion, '平静') AS emotion,
+               COUNT(*)                       AS cnt,
+               ROUND(AVG(mood_score), 1)      AS avgScore
+        FROM emotion_diary
+        WHERE deleted_flag = 0
+          AND IFNULL(diary_date, DATE(create_time)) &gt;= #{startDate}
+        GROUP BY DATE_FORMAT(IFNULL(diary_date, DATE(create_time)), '%Y-%m-%d'), IFNULL(dominant_emotion, '平静')
+        ORDER BY date
+    </select>
+
+    <!-- 会话每日趋势：date、sessionCount、userCount（去重） -->
+    <select id="selectSessionDailyRows" resultType="map">
+        SELECT DATE_FORMAT(DATE(create_time), '%Y-%m-%d') AS date,
+               COUNT(*)                AS sessionCount,
+               COUNT(DISTINCT user_id) AS userCount
+        FROM consultation_session
+        WHERE deleted_flag = 0 AND create_time &gt;= #{start}
+        GROUP BY DATE_FORMAT(DATE(create_time), '%Y-%m-%d')
+        ORDER BY date
+    </select>
+
+    <!--
+      会话平均时长（分钟，1 位小数）：每个会话取 started_at 到最后一条消息时间的差值，再整体求均值。
+      无消息的会话时长按 0 计。
+    -->
+    <select id="avgSessionDurationMinutes" resultType="double">
+        SELECT IFNULL(ROUND(AVG(dur), 1), 0) FROM (
+            SELECT TIMESTAMPDIFF(MINUTE, s.started_at,
+                       IFNULL((SELECT MAX(m.create_time) FROM consultation_message m
+                               WHERE m.session_id = s.id), s.started_at)) AS dur
+            FROM consultation_session s
+            WHERE s.deleted_flag = 0 AND s.started_at IS NOT NULL
+        ) t
+    </select>
+
+    <!-- 每日新增用户：date、cnt -->
+    <select id="selectNewUserDailyRows" resultType="map">
+        SELECT DATE_FORMAT(DATE(create_time), '%Y-%m-%d') AS date,
+               COUNT(*) AS cnt
+        FROM `user`
+        WHERE deleted_flag = 0 AND create_time &gt;= #{start}
+        GROUP BY DATE_FORMAT(DATE(create_time), '%Y-%m-%d')
+        ORDER BY date
+    </select>
+
+    <!-- 每日活跃用户（会话或日记任一行为，按创建时间所在日期去重）：date、cnt -->
+    <select id="selectActiveUserDailyRows" resultType="map">
+        SELECT DATE_FORMAT(t.d, '%Y-%m-%d') AS date, COUNT(DISTINCT t.user_id) AS cnt
+        FROM (
+            SELECT DATE(create_time) AS d, user_id FROM consultation_session
+            WHERE deleted_flag = 0 AND create_time &gt;= #{start}
+            UNION
+            SELECT DATE(create_time) AS d, user_id FROM emotion_diary
+            WHERE deleted_flag = 0 AND create_time &gt;= #{start}
+        ) t
+        GROUP BY DATE_FORMAT(t.d, '%Y-%m-%d')
+        ORDER BY date
+    </select>
+
+    <!-- 每日写日记用户（去重）：date、cnt -->
+    <select id="selectDiaryUserDailyRows" resultType="map">
+        SELECT DATE_FORMAT(IFNULL(diary_date, DATE(create_time)), '%Y-%m-%d') AS date,
+               COUNT(DISTINCT user_id) AS cnt
+        FROM emotion_diary
+        WHERE deleted_flag = 0
+          AND IFNULL(diary_date, DATE(create_time)) &gt;= #{startDate}
+        GROUP BY DATE_FORMAT(IFNULL(diary_date, DATE(create_time)), '%Y-%m-%d')
+        ORDER BY date
+    </select>
+
+    <!-- 每日会话用户（去重）：date、cnt -->
+    <select id="selectConsultationUserDailyRows" resultType="map">
+        SELECT DATE_FORMAT(DATE(create_time), '%Y-%m-%d') AS date,
+               COUNT(DISTINCT user_id) AS cnt
+        FROM consultation_session
+        WHERE deleted_flag = 0 AND create_time &gt;= #{start}
+        GROUP BY DATE_FORMAT(DATE(create_time), '%Y-%m-%d')
+        ORDER BY date
+    </select>
+
+</mapper>
