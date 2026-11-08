@@ -73,7 +73,6 @@
             WHERE deleted_flag = 0
             GROUP BY session_id
         ) m ON m.session_id = s.id
-        WHERE s.deleted_flag = 0
         ${ew.customSqlSegment}
 
     </select>

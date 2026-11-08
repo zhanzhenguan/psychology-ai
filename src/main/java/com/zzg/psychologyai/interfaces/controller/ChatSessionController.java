@@ -3,6 +3,7 @@ package com.zzg.psychologyai.interfaces.controller;
 import cn.hutool.json.JSONUtil;
 import com.zzg.psychologyai.application.ConsultationMessageAppService;
 import com.zzg.psychologyai.application.command.StartSessionCommand;
+import com.zzg.psychologyai.application.dto.EmotionAnalyzeDTO;
 import com.zzg.psychologyai.application.dto.SessionMessageDTO;
 import com.zzg.psychologyai.application.view.ChatMessageView;
 import com.zzg.psychologyai.application.view.ChatSessionView;
@@ -81,14 +82,8 @@ public class ChatSessionController {
      * 会话不存在或越权访问由应用服务抛出 404/403；分析结果为空时返回空 Map。
      */
     @GetMapping("/session/{sessionId}/emotion")
-    public Result<Map<String, Object>> emotions(@PathVariable String sessionId) {
-        return chatSessionAppService.emotion(sessionId)
-                .<Result<Map<String, Object>>>map(dto -> Result.success(Map.of(
-                        "sessionId", sessionId,
-                        "lastEmotionAnalysis", JSONUtil.toJsonStr(dto),
-                        "lastEmotionUpdatedAt", ""
-                )))
-                .orElseGet(() -> Result.success(Map.of()));
+    public Result<EmotionAnalyzeDTO> emotions(@PathVariable String sessionId) {
+        return Result.success(chatSessionAppService.emotion(sessionId).orElseGet(EmotionAnalyzeDTO::new));
     }
 
 

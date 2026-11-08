@@ -19,6 +19,7 @@ import com.zzg.psychologyai.common.exception.BizException;
 import com.zzg.psychologyai.common.result.PageResult;
 import com.zzg.psychologyai.domain.enums.MessageTypeEnum;
 import com.zzg.psychologyai.domain.enums.SenderTypeEnum;
+import com.zzg.psychologyai.domain.enums.UserTypeEnum;
 import com.zzg.psychologyai.domain.model.ConsultationMessage;
 import com.zzg.psychologyai.domain.model.ConsultationSession;
 import com.zzg.psychologyai.domain.repository.ConsultationMessageRepository;
@@ -128,11 +129,19 @@ public class ConsultationMessageAppService {
     public PageResult<ChatSessionView> page(long page, long size) {
         // 会话列表只查本人数据，userId 必须来自登录上下文而非请求参数（防越权）
         Long userId = CurrentUserUtils.getCurrentUserId();
+        Integer userType = CurrentUserUtils.getCurrentUserType();
         if (userId == null) {
             throw new BizException(ResultCode.UNAUTHORIZED, "用户未登录");
         }
+
         QueryWrapper wrapper = new QueryWrapper<>();
-        wrapper.eq("s.user_id", userId);
+        wrapper.eq("s.deleted_flag","0");
+        //管理员
+        if(userType == UserTypeEnum.ADMIN.getValue()){
+            log.info("管理员查询所有会话列表");
+        } else {
+            wrapper.eq("s.user_id", userId);
+        }
         wrapper.orderByDesc("m.last_message_time");
         wrapper.orderByDesc("s.id");
         Page<ConsultationSessionDO> result = consultationSessionMapper.selectSessionPage(new Page<>(page, size), wrapper);
@@ -160,7 +169,9 @@ public class ConsultationMessageAppService {
         ConsultationSession session = consultationSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BizException(ResultCode.NOT_FOUND, "会话不存在"));
         Long currentUserId = CurrentUserUtils.getCurrentUserId();
-        if (!ObjectUtil.equals(session.getUserId(), currentUserId)) {
+        Integer userType = CurrentUserUtils.getCurrentUserType();
+        //管理员
+        if (userType != 2 && !ObjectUtil.equals(session.getUserId(), currentUserId)) {
             throw new BizException(ResultCode.FORBIDDEN, "无权访问该会话");
         }
         return consultationSessionRepository.findMessagesBySessionId(sessionId).stream()

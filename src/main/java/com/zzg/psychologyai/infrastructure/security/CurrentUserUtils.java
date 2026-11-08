@@ -52,6 +52,16 @@ public final class CurrentUserUtils {
         return getCurrentUser().map(LoginUser::getUsername).orElse(null);
     }
 
+
+    /**
+     * 当前登录用户名，未登录返回 null
+     *
+     * @return 用户名或 null
+     */
+    public static Integer getCurrentUserType() {
+        return getCurrentUser().map(LoginUser::getUserType).orElse(null);
+    }
+
     /**
      * 当前登录用户ID，未登录时抛业务异常（用于必须登录才能操作的写接口）
      *
