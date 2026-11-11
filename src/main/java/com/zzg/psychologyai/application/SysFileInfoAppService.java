@@ -8,6 +8,7 @@ import com.zzg.psychologyai.common.exception.BizException;
 import com.zzg.psychologyai.infrastructure.persistence.mapper.SysFileInfoMapper;
 import com.zzg.psychologyai.infrastructure.persistence.po.SysFileInfoPO;
 import com.zzg.psychologyai.infrastructure.security.CurrentUserUtils;
+import com.zzg.psychologyai.infrastructure.storage.minio.service.MinioStorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +36,7 @@ public class SysFileInfoAppService {
 
     private final SysFileInfoMapper sysFileInfoMapper;
     private final UploadMaps uploadMapstruct;
+    private final MinioStorageService minioStorageService;
 
 
     @Transactional(rollbackFor = Exception.class)
@@ -86,6 +88,52 @@ public class SysFileInfoAppService {
             e.printStackTrace();
             throw new BizException(ResultCode.FAIL, "文件上传失败");
         }
+
+        return uploadMapstruct.toDTO(po);
+    }
+
+    /**
+     * 上传文件到 MinIO 对象存储（独立于本地磁盘上传 {@link #upload}，原本地方法保留不动）。
+     * <p>
+     * 先完成 MinIO 上传再落库，避免产生只有记录、没有对象的脏数据；落库结构与本地链路一致，
+     * {@code filePath} 存 MinIO 预览地址，{@code fileName} 存对象 key。
+     *
+     * @param uploadCommand 上传命令
+     * @return 上传结果 DTO
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public UploadDTO uploadMinio(UploadCommand uploadCommand) {
+        MultipartFile file = uploadCommand.file();
+        String businessType = uploadCommand.businessType();
+        String businessId = uploadCommand.businessId();
+        String businessField = uploadCommand.businessField();
+
+        String originalFilename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
+        String suffix = originalFilename.contains(".") ? originalFilename.substring(originalFilename.lastIndexOf(".")) : "";
+        String objectKey = minioStorageService.buildObjectKey(suffix);
+
+        // 先上传到 MinIO，成功后再落库
+        minioStorageService.upload(file, objectKey);
+
+        // 纯文件名（uuid.suffix），与本地磁盘上传的 fileName 口径一致
+        String storedName = objectKey.substring(objectKey.lastIndexOf("/") + 1);
+
+        // businessField（如 cover）拼到 objectType 后缀，便于按业务字段过滤
+        String objectType = businessField == null || businessField.isBlank()
+                ? businessType
+                : businessType + "_" + businessField;
+
+        SysFileInfoPO po = new SysFileInfoPO();
+        po.setUserId(CurrentUserUtils.getCurrentUserId());
+        po.setOriginalFilename(originalFilename);
+        po.setFileName(storedName);
+        po.setFilePath(minioStorageService.toRelativePath(objectKey));
+        po.setFileSize(file.getSize());
+        po.setContentType(file.getContentType());
+        po.setFileSuffix(suffix);
+        po.setObjectType(objectType);
+        po.setObjectId(businessId);
+        sysFileInfoMapper.insert(po);
 
         return uploadMapstruct.toDTO(po);
     }

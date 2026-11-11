@@ -48,8 +48,8 @@ mybatis-plus:
   mapper-locations: 'classpath*:mapper/**/*.xml'
   configuration:
     map-underscore-to-camel-case: true
-#    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+#    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     banner: true
     db-config:
@@ -73,6 +73,16 @@ jwt:
   expire-seconds: ${JWT_EXPIRE_SECONDS:7200}
   header: Authorization
   prefix: "Bearer "
+
+# MinIO 对象存储：/file/uploadMinio 接口使用；客户端懒连接，未启动 MinIO 不影响应用启动。
+# 生产环境一律用环境变量覆盖凭据；preview-url 缺省时回退 endpoint（对外经 Nginx 暴露时单独配置）
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://192.168.136.128:9000}
+  access-key: ${MINIO_ACCESS_KEY:admin}
+  secret-key: ${MINIO_SECRET_KEY:Admin@123456}
+  bucket: ${MINIO_BUCKET:uploads}
+  # 对外预览地址前缀，留空则用 endpoint 拼接 {endpoint}/{bucket}/{objectKey}
+  preview-url: ${MINIO_PREVIEW_URL:}
 
 # 日志格式带 traceId，与 Result.traceId 一致，便于链路排查
 logging:

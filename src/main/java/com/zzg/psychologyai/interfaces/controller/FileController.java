@@ -33,7 +33,7 @@ public class FileController {
             @RequestParam(value = "businessField", required = false) String businessField,
             HttpServletRequest request)  {
 
-        UploadDTO uploadDTO = sysFileInfoAppService.upload(new UploadCommand(file, businessType, businessId, businessField));
+        UploadDTO uploadDTO = sysFileInfoAppService.uploadMinio(new UploadCommand(file, businessType, businessId, businessField));
 
         return Result.success(UploadResponse.of(uploadDTO));
     }
